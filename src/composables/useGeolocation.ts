@@ -26,13 +26,28 @@ export function useGeolocation() {
         return
       }
 
+      // Warm start: grab a quick, possibly cached/low-accuracy fix so the map
+      // isn't stuck waiting on a slow high-accuracy GPS lock.
+      try {
+        const quick = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: false,
+          timeout: 20000,
+          maximumAge: 60000
+        })
+        handlePosition(quick.coords)
+      } catch {
+        // ignore - watchPosition below will keep trying
+      }
+
       nativeWatchId = await Geolocation.watchPosition(
-        { enableHighAccuracy: true, timeout: 10000 },
+        { enableHighAccuracy: true, timeout: 30000, maximumAge: 15000 },
         (pos, err) => {
           if (err) {
-            error.value = err.message
+            // Don't clobber an existing fix with a transient timeout error
+            if (!position.value) error.value = err.message
             return
           }
+          error.value = null
           if (pos) handlePosition(pos.coords)
         }
       )
@@ -42,9 +57,9 @@ export function useGeolocation() {
         return
       }
       webWatchId = navigator.geolocation.watchPosition(
-        (pos) => handlePosition(pos.coords),
-        (err) => { error.value = err.message },
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+        (pos) => { error.value = null; handlePosition(pos.coords) },
+        (err) => { if (!position.value) error.value = err.message },
+        { enableHighAccuracy: true, maximumAge: 15000, timeout: 30000 }
       )
     }
   }
